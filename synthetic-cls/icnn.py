@@ -2,13 +2,8 @@
 
 import tensorflow as tf
 import tflearn
-
 import numpy as np
 import numpy.random as npr
-
-np.set_printoptions(precision=2)
-np.seterr(all='raise')
-
 import argparse
 import csv
 import os
@@ -17,19 +12,18 @@ import time
 import pickle
 import json
 import shutil
-
 from datetime import datetime
-
 import matplotlib as mpl
 from matplotlib import cm
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 plt.style.use('bmh')
-
 from sklearn.utils import shuffle
 from sklearn.datasets import make_moons, make_circles, make_classification
-
 import setproctitle
+
+np.set_printoptions(precision=2)
+np.seterr(all='raise')
 
 def main():
     parser = argparse.ArgumentParser()
@@ -37,21 +31,17 @@ def main():
     parser.add_argument('--nEpoch', type=int, default=100)
     # parser.add_argument('--testBatchSz', type=int, default=2048)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--model', type=str, default="picnn",
-                        choices=['picnn', 'ficnn'])
-    parser.add_argument('--dataset', type=str, default="moons",
-                        choices=['moons', 'circles', 'linear'])
+    parser.add_argument('--model', type=str, default="ficnn",choices=['picnn', 'ficnn'])
+    parser.add_argument('--dataset', type=str, default="linear",choices=['moons', 'circles', 'linear'])
     parser.add_argument('--noncvx', action='store_true')
-
     args = parser.parse_args()
 
     npr.seed(args.seed)
     tf.set_random_seed(args.seed)
 
     setproctitle.setproctitle('bamos.icnn.synthetic.{}.{}'.format(args.model, args.dataset))
+    save = os.path.join(os.path.expanduser(args.save),"{}.{}".format(args.model, args.dataset))
 
-    save = os.path.join(os.path.expanduser(args.save),
-                        "{}.{}".format(args.model, args.dataset))
     if os.path.isdir(save):
         shutil.rmtree(save)
     os.makedirs(save, exist_ok=True)
@@ -62,8 +52,7 @@ def main():
         (dataX, dataY) = make_circles(noise=0.2, factor=0.5, random_state=0)
         dataY = 1.-dataY
     elif args.dataset == "linear":
-        (dataX, dataY) = make_classification(n_features=2, n_redundant=0, n_informative=2,
-                                             random_state=1, n_clusters_per_class=1)
+        (dataX, dataY) = make_classification(n_features=2, n_redundant=0, n_informative=2,random_state=1, n_clusters_per_class=1)
         rng = np.random.RandomState(2)
         dataX += 2 * rng.uniform(size=dataX.shape)
     else:
@@ -78,6 +67,7 @@ def main():
 
     config = tf.ConfigProto() #log_device_placement=False)
     config.gpu_options.allow_growth = True
+
     with tf.Session(config=config) as sess:
         model = Model(nFeatures, nLabels, sess, args.model, nGdIter=30)
         model.train(args, dataX, dataY)
@@ -103,7 +93,6 @@ class Model:
         self.model = model
 
         self.trueY_ = tf.placeholder(tf.float32, shape=[None, nLabels], name='trueY')
-
         self.x_ = tf.placeholder(tf.float32, shape=[None, nFeatures], name='x')
         self.y0_ = tf.placeholder(tf.float32, shape=[None, nLabels], name='y')
 
@@ -129,7 +118,6 @@ class Model:
 
         self.yn_ = yi_
         self.energies_ = Ei_
-
         self.mse_ = tf.reduce_mean(tf.square(self.yn_ - self.trueY_))
 
         self.opt = tf.train.AdamOptimizer(0.001)
@@ -148,7 +136,8 @@ class Model:
         # for g,v in self.gv_:
         #     variable_summaries(g, 'gradients/'+v.name)
 
-        self.merged = tf.merge_all_summaries()
+        #self.merged = tf.merge_all_summaries()
+        self.merged =tf.summary.merge_all()  #YZL
         self.saver = tf.train.Saver(max_to_keep=0)
 
     def train(self, args, dataX, dataY):
@@ -166,8 +155,9 @@ class Model:
         trainW = csv.writer(trainF)
         trainW.writerow(trainFields)
 
-        self.trainWriter = tf.train.SummaryWriter(os.path.join(save, 'train'),
-                                                  self.sess.graph)
+        #self.trainWriter = tf.train.SummaryWriter(os.path.join(save, 'train'),self.sess.graph)
+        self.trainWriter = tf.summary.FileWriter(os.path.join(save, 'train'),self.sess.graph)
+
         self.sess.run(tf.initialize_all_variables())
         if not args.noncvx:
             self.sess.run(self.makeCvx)
@@ -212,7 +202,8 @@ class Model:
 
     def f_ficnn(self, x, y, reuse=False):
         fc = tflearn.fully_connected
-        xy = tf.concat(1, (x, y))
+        #xy = tf.concat(1, (x, y))
+        xy = tf.concat([x, y],1)    #YZL
 
         prevZ = None
         for i, sz in enumerate([200, 200, 1]):
@@ -235,7 +226,7 @@ class Model:
 
     def f_picnn(self, x, y, reuse=False):
         fc = tflearn.fully_connected
-        xy = tf.concat(1, (x, y))
+        xy = tf.concat([x, y],1)
 
         prevZ, prevU = None, x
         for layerI, sz in enumerate([200, 200, 1]):
